@@ -42,4 +42,33 @@ curl -v -H "Connection: keep-alive" http://127.0.0.1:8080
 ```
 
 ## 日志文件
-服务器会自动生成日志文件server_log.txt，记录每次请求的详细信息。 
+服务器会自动生成日志文件server_log.txt，记录每次请求的详细信息。
+
+## Git版本控制
+本项目使用Git进行版本控制。如需将代码推送到远程仓库，请执行以下操作：
+
+1. 添加远程仓库：
+   ```
+   git remote add origin <远程仓库URL>
+   ```
+
+2. 推送代码到远程仓库：
+   ```
+   git push -u origin main
+   ```
+
+3. 后续更新：
+   ```
+   git add .
+   git commit -m "提交说明"
+   git push
+   ```
+
+## 项目目录结构
+```
+run/
+├── server.py         # 服务器主程序
+├── requirements.txt  # 依赖说明
+├── README.txt        # 说明文档
+└── www/              # 网站文件目录（自动创建）
+``` 
