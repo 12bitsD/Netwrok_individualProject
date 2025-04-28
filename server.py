@@ -49,14 +49,24 @@ class WebServer:
         
         while keep_alive:
             try:
+                # 改进的请求数据接收逻辑
                 request_data = b''
-                while True:
-                    chunk = client_socket.recv(4096)
-                    if not chunk:
-                        break
-                    request_data += chunk
-                    if b'\r\n\r\n' in request_data:
-                        break
+                try:
+                    while True:
+                        chunk = client_socket.recv(4096)
+                        if not chunk:
+                            break
+                        request_data += chunk
+                        if b'\r\n\r\n' in request_data:
+                            break
+                        # 添加请求大小限制
+                        if len(request_data) > 65536:  # 64KB
+                            raise ValueError("请求数据过大")
+                except Exception as e:
+                    self.logger.error(f"接收数据错误: {e}")
+                    response = self.create_response('400', 'Bad Request', '', client_address)
+                    client_socket.sendall(response.encode('utf-8'))
+                    break
                 
                 if not request_data:
                     break
@@ -133,17 +143,27 @@ class WebServer:
         
         # 构建文件路径
         file_path = os.path.join(self.root_dir, path.lstrip('/'))
+        
+        # 添加路径安全检查
+        real_path = os.path.realpath(file_path)
+        if not real_path.startswith(os.path.realpath(self.root_dir)):
+            self.logger.warning(f"尝试访问受限目录: {file_path}")
+            return self.create_response('403', 'Forbidden', '', client_address, 
+                                       request_path=path, keep_alive=keep_alive), keep_alive
+        
         self.logger.info(f"访问文件: {file_path}")
         
         # 检查文件是否存在
         if not os.path.exists(file_path) or os.path.isdir(file_path):
             self.logger.warning(f"文件不存在: {file_path}")
-            return self.create_response('404', 'Not Found', '', client_address, request_path=path), keep_alive
+            return self.create_response('404', 'Not Found', '', client_address, 
+                                       request_path=path, keep_alive=keep_alive), keep_alive
         
         # 检查文件是否可读
         if not os.access(file_path, os.R_OK):
             self.logger.warning(f"文件无法访问: {file_path}")
-            return self.create_response('403', 'Forbidden', '', client_address, request_path=path), keep_alive
+            return self.create_response('403', 'Forbidden', '', client_address, 
+                                       request_path=path, keep_alive=keep_alive), keep_alive
         
         # 获取文件的MIME类型
         content_type, _ = mimetypes.guess_type(file_path)
@@ -156,7 +176,8 @@ class WebServer:
                          'image/jpeg', 'image/png', 'image/gif']
         if content_type not in supported_types:
             self.logger.warning(f"不支持的媒体类型: {content_type}")
-            return self.create_response('415', 'Unsupported Media Type', '', client_address, request_path=path), keep_alive
+            return self.create_response('415', 'Unsupported Media Type', '', client_address, 
+                                       request_path=path, keep_alive=keep_alive), keep_alive
         
         # 获取文件最后修改时间
         last_modified = os.path.getmtime(file_path)
@@ -170,7 +191,7 @@ class WebServer:
                 if last_modified <= if_modified_since:
                     self.logger.info("文件未修改")
                     return self.create_response('304', 'Not Modified', '', client_address, 
-                                              last_modified_str, request_path=path), keep_alive
+                                              last_modified_str, request_path=path, keep_alive=keep_alive), keep_alive
             except ValueError:
                 self.logger.warning(f"无效的If-Modified-Since: {headers['if-modified-since']}")
         
@@ -179,7 +200,7 @@ class WebServer:
             # HEAD方法只返回头部，不返回内容
             self.logger.info("HEAD请求 - 只返回头部")
             return self.create_response('200', 'OK', '', client_address, 
-                                       last_modified_str, content_type, request_path=path), keep_alive
+                                       last_modified_str, content_type, request_path=path, keep_alive=keep_alive), keep_alive
         
         elif method == 'GET':
             # GET方法返回头部和内容
@@ -191,7 +212,7 @@ class WebServer:
                 if content_type.startswith('text'):
                     content = f.read().decode('utf-8')
                     return self.create_response('200', 'OK', content, client_address, 
-                                              last_modified_str, content_type, request_path=path), keep_alive
+                                              last_modified_str, content_type, request_path=path, keep_alive=keep_alive), keep_alive
                 else:
                     # 对于二进制文件(图片等)，直接返回二进制数据
                     headers = self.create_headers('200', 'OK', file_size, last_modified_str, content_type, keep_alive)
@@ -204,7 +225,8 @@ class WebServer:
         else:
             # 不支持的方法
             self.logger.warning(f"不支持的方法: {method}")
-            return self.create_response('400', 'Bad Request', '', client_address, request_path=path), keep_alive
+            return self.create_response('400', 'Bad Request', '', client_address, 
+                                       request_path=path, keep_alive=keep_alive), keep_alive
     
     def create_headers(self, status_code, status_text, content_length, last_modified=None, content_type=None, keep_alive=False):
         current_time = datetime.datetime.now().strftime('%a, %d %b %Y %H:%M:%S GMT')
@@ -231,9 +253,10 @@ class WebServer:
         return '\r\n'.join(headers)
             
     def create_response(self, status_code, status_text, content, client_address, 
-                      last_modified=None, content_type=None, request_path='/'):
+                      last_modified=None, content_type=None, request_path='/', keep_alive=False):
+        # 修复：传递keep_alive参数给create_headers
         headers = self.create_headers(status_code, status_text, len(content), 
-                                    last_modified, content_type)
+                                    last_modified, content_type, keep_alive)
         
         response = headers + '\r\n\r\n' + content
         
@@ -290,6 +313,18 @@ def create_sample_files(www_dir):
             alert('你好，这是一个测试消息！');
         }
         """)
+    
+    # 创建测试图片文件
+    try:
+        import urllib.request
+        urllib.request.urlretrieve(
+            "https://via.placeholder.com/150", 
+            os.path.join(www_dir, "image.jpg")
+        )
+    except:
+        # 如果无法下载，创建一个小的彩色图像
+        with open(os.path.join(www_dir, "image.jpg"), "wb") as f:
+            f.write(b'\xff\xd8\xff\xe0\x00\x10JFIF\x00\x01\x01\x01\x00H\x00H\x00\x00\xff\xdb\x00C\x00\x08\x06\x06\x07\x06\x05\x08\x07\x07\x07\t\t\x08\n\x0c\x14\r\x0c\x0b\x0b\x0c\x19\x12\x13\x0f\x14\x1d\x1a\x1f\x1e\x1d\x1a\x1c\x1c $.\' ",#\x1c\x1c(7),01444\x1f\'9=82<.342\xff\xdb\x00C\x01\t\t\t\x0c\x0b\x0c\x18\r\r\x182!\x1c!22222222222222222222222222222222222222222222222222\xff\xc0\x00\x11\x08\x00\x01\x00\x01\x03\x01"\x00\x02\x11\x01\x03\x11\x01\xff\xc4\x00\x1f\x00\x00\x01\x05\x01\x01\x01\x01\x01\x01\x00\x00\x00\x00\x00\x00\x00\x00\x01\x02\x03\x04\x05\x06\x07\x08\t\n\x0b\xff\xc4\x00\xb5\x10\x00\x02\x01\x03\x03\x02\x04\x03\x05\x05\x04\x04\x00\x00\x01}\x01\x02\x03\x00\x04\x11\x05\x12!1A\x06\x13Qa\x07"q\x142\x81\x91\xa1\x08#B\xb1\xc1\x15R\xd1\xf0$3br\x82\t\n\x16\x17\x18\x19\x1a%&\'()*456789:CDEFGHIJSTUVWXYZcdefghijstuvwxyz\x83\x84\x85\x86\x87\x88\x89\x8a\x92\x93\x94\x95\x96\x97\x98\x99\x9a\xa2\xa3\xa4\xa5\xa6\xa7\xa8\xa9\xaa\xb2\xb3\xb4\xb5\xb6\xb7\xb8\xb9\xba\xc2\xc3\xc4\xc5\xc6\xc7\xc8\xc9\xca\xd2\xd3\xd4\xd5\xd6\xd7\xd8\xd9\xda\xe1\xe2\xe3\xe4\xe5\xe6\xe7\xe8\xe9\xea\xf1\xf2\xf3\xf4\xf5\xf6\xf7\xf8\xf9\xfa\xff\xc4\x00\x1f\x01\x00\x03\x01\x01\x01\x01\x01\x01\x01\x01\x01\x00\x00\x00\x00\x00\x00\x01\x02\x03\x04\x05\x06\x07\x08\t\n\x0b\xff\xc4\x00\xb5\x11\x00\x02\x01\x02\x04\x04\x03\x04\x07\x05\x04\x04\x00\x01\x02w\x00\x01\x02\x03\x11\x04\x05!1\x06\x12AQ\x07aq\x13"2\x81\x08\x14B\x91\xa1\xb1\xc1\t#3R\xf0\x15br\xd1\n\x16$4\xe1%\xf1\x17\x18\x19\x1a&\'()*56789:CDEFGHIJSTUVWXYZcdefghijstuvwxyz\x82\x83\x84\x85\x86\x87\x88\x89\x8a\x92\x93\x94\x95\x96\x97\x98\x99\x9a\xa2\xa3\xa4\xa5\xa6\xa7\xa8\xa9\xaa\xb2\xb3\xb4\xb5\xb6\xb7\xb8\xb9\xba\xc2\xc3\xc4\xc5\xc6\xc7\xc8\xc9\xca\xd2\xd3\xd4\xd5\xd6\xd7\xd8\xd9\xda\xe2\xe3\xe4\xe5\xe6\xe7\xe8\xe9\xea\xf2\xf3\xf4\xf5\xf6\xf7\xf8\xf9\xfa\xff\xda\x00\x0c\x03\x01\x00\x02\x11\x03\x11\x00?\x00\xfe\xfc(\xa2\x8a\x00\xff\xd9')
     
     print("示例文件已创建")
 
