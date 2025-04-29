@@ -1,43 +1,66 @@
-# 多线程Web服务器
+# Python Multi-threaded HTTP Server
 
-## 项目说明
-这是一个使用Python实现的多线程Web服务器，支持HTTP协议的GET和HEAD请求，能够处理文本和图像文件，并实现了多种HTTP状态码响应。
+A simple multi-threaded HTTP server implementation using Python sockets.
 
-## 功能特点
-- 支持多线程并发处理请求
-- 支持GET和HEAD命令
-- 支持文本文件和图像文件
-- 实现六种HTTP响应状态：200 OK、304 Not Modified、400 Bad Request、403 Forbidden、404 File Not Found、415 Unsupported Media Type
-- 处理Last-Modified和If-Modified-Since头部字段
-- 支持HTTP持久连接(keep-alive)和非持久连接(close)
-- 记录请求日志
+## Features
 
-## 运行环境要求
-- Python 3.6或更高版本
-- 无需额外的第三方库
+- Multi-threaded connection handling
+- Support for GET and HEAD methods
+- HTTP status codes: 200, 304, 400, 403, 404, 415
+- Persistent connections (keep-alive)
+- Request logging
 
-## 如何运行
-1. 确保您的系统已安装Python 3.6+
-2. 进入程序所在目录
-3. 运行以下命令启动服务器：
+## Requirements
+
+- Python 3.6+
+
+## Running the Server
+
+1. Navigate to the project directory:
    ```
-   python server.py
+   cd run
    ```
-4. 服务器默认运行在127.0.0.1:8080
 
-## 访问服务器
-服务器启动后，可以通过浏览器访问：
-- http://127.0.0.1:8080
+2. Start the server:
+   ```
+   python main.py [port]
+   ```
+   Where `[port]` is an optional port number (default: 8080)
 
-## 测试HEAD请求
-可以使用curl命令测试HEAD请求：
+3. Or use the start script:
+   ```
+   ./start_server.sh [port]
+   ```
+
+4. Test the server by visiting:
+   ```
+   http://127.0.0.1:8080
+   ```
+
+## File Structure
+
+- `main.py`: Entry point for the application
+- `server.py`: Core server implementation
+- `http_parser.py`: HTTP request parsing
+- `http_response.py`: HTTP response generation
+- `logger.py`: Logging system
+- `config.py`: Configuration constants
+- `www/`: Directory for web content (HTML, images, etc.)
+- `server.log`: Log file for server requests
+
+## Architecture
+
+The server is designed with modular components:
+
+1. `HTTPServer`: Manages connections and threads
+2. `HTTPParser`: Parses HTTP requests
+3. `HTTPResponse`: Generates HTTP responses
+4. `Logger`: Handles request logging
+
+## Example Usage
+
 ```
-curl -I http://127.0.0.1:8080
+python main.py 8888
 ```
 
-## 测试持久连接
-可以使用curl命令测试持久连接：
-```
-curl -v -H "Connection: keep-alive" http://127.0.0.1:8080
-```
-
+This starts the server on port 8888. 
